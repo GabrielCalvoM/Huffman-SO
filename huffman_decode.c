@@ -9,14 +9,9 @@
 #include <utf8proc.h>
 
 #include "cnvchar.h"
+#include "huffman_decode.h"
 
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE 1024
-int files_number;
-
-#endif // BUFFER_SIZE
-
-int start_files = 0;
+int start_files = 0, compressed_files_number;
 char_freq_t *tree, *tree_pointer;
 
 void decompress_file(FILE*, const char*);
@@ -86,11 +81,11 @@ void decompress_dir(const char *compressed_path, const char *dir_path) {
 
     fseek(file, start_files, SEEK_SET);
 
-    int files_number;
-    fread(&files_number, sizeof(files_number), 1, file);
+    int compressed_files_number;
+    fread(&compressed_files_number, sizeof(compressed_files_number), 1, file);
 
     mkdir(dir_path, 0755);
-    for (int i = 0; i < files_number; i++) {
+    for (int i = 0; i < compressed_files_number; i++) {
         decompress_file(file, dir_path);
     }
 }
@@ -162,21 +157,4 @@ void decompress_char(char character, char buffer[], int *index, int *decompresse
         *index += strlen(tree_pointer->character);
         tree_pointer = tree;
     }
-}
-
-int main(int argc, char *argv[]) {
-    if (argc < 3) {
-        printf("Usage: %s <compressed_file_path> <dir_path>\n", argv[0]);
-        return 1;
-    }
-
-    char *file_path = calloc(1, strlen(argv[1]) + 3);
-    char *dir_path = calloc(1, strlen(argv[2]) + 3);
-    sprintf(file_path, "./%s", argv[1]);
-    sprintf(dir_path, "./%s", argv[2]);
-    
-    scan_huff(file_path);
-    decompress_dir(file_path, dir_path);
-    
-    return 0;
 }

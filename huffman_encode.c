@@ -8,13 +8,9 @@
 #include <utf8proc.h>
 
 #include "cnvchar.h"
+#include "huffman_encode.h"
 
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE 1024
 int files_number;
-
-#endif // BUFFER_SIZE
-
 
 void scan_file_characters(const char*, va_list);
 void scan_str(char buffer[], int *start_buffer);
@@ -229,16 +225,4 @@ void record_encoded_str(const char *str, FILE *file, unsigned char buffer[], int
         char_buffer <<= (8 - bit_pointer);
         buffer[buffer_bytes] |= char_buffer;
     }
-}
-
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        printf("Usage: %s <directory_path>\n", argv[0]);
-        return 1;
-    }
-    
-    scan_dir_characters(argv[1]);
-    compress_dir(argv[1]);
-    
-    return 0;
 }
