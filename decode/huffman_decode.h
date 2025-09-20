@@ -3,8 +3,6 @@
 
 #ifndef BUFFER_SIZE
 #define BUFFER_SIZE 1024
-int compressed_files_number;
-
 #endif // BUFFER_SIZE
 
 void scan_huff(const char *file_path);

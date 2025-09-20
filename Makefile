@@ -1,18 +1,22 @@
+CNV = cnvchar/cnvchar
+ENCODE = encode/huffman_encode
+DECODE = decode/$(DECODE)
+
 CC = gcc
 CFLAGS = -Wall
 LIBS =  -lutf8proc -lm
 
-huffman: cnvchar.o huffman_encode.o huffman_decode.o huffman.c
-	$(CC) $(CFLAGS) -o huffman cnvchar.o huffman_encode.o huffman_decode.o huffman.c $(LIBS)
+huffman: $(CNV).o $(ENCODE).o $(DECODE).o huffman.c
+	$(CC) $(CFLAGS) -o huffman $(CNV).o $(ENCODE).o $(DECODE).o huffman.c $(LIBS)
 
-cnvchar.o: cnvchar.c
-	$(CC) $(CFLAGS) -c cnvchar.c -o cnvchar.o
+$(CNV).o: $(CNV).c
+	$(CC) $(CFLAGS) -c $(CNV).c -o $(CNV).o
 
-huffman_encode.o: cnvchar.o huffman_encode.c
-	$(CC) $(CFLAGS) -c huffman_encode.c -o huffman_encode.o
+$(ENCODE).o: $(ENCODE).c
+	$(CC) $(CFLAGS) -c $(ENCODE).c -o $(ENCODE).o
 
-huffman_decode.o: cnvchar.o huffman_decode.c
-	$(CC) $(CFLAGS) -c huffman_decode.c -o huffman_decode.o
+$(DECODE).o: $(DECODE).c
+	$(CC) $(CFLAGS) -c $(DECODE).c -o $(DECODE).o
 
 clean:
 	rm -f *.o huffman
