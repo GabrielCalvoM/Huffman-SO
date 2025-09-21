@@ -1,0 +1,7 @@
+.vscode/
+!*.*
+*/*.o
+.vscode/settings.json
+.vscode/c_cpp_properties.json
+testingFiles/*
+huffman

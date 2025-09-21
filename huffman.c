@@ -13,6 +13,8 @@ int encode_main(int argc, char *argv[]) {
     
     scan_dir_characters(argv[2]);
     compress_dir(argv[2]);
+
+    return 0;
 }
 
 int decode_main(int argc, char *argv[]) {

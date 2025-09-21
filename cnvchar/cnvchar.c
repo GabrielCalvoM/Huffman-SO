@@ -81,6 +81,7 @@ char_freq_t *construct_tree(char_list_t list) {
     if (list.head == NULL || list.size <= 0) return NULL;
     else if (list.size == 1) return &list.head[0];
 
+    order_list_by_frequency(&list);
     return construct_tree_aux(list);
 }
 
@@ -88,14 +89,14 @@ char_freq_t *construct_tree_aux(char_list_t list) {
     if (list.size == 1) return &list.head[0];
     
     int size = --list.size;
-    char_freq_t *head = list.head, new_node = (char_freq_t) {NULL, 0, 0, NULL, NULL};
-    new_node.frequency = head[0].frequency + head[1].frequency;
 
-    new_node.left = malloc(sizeof(char_freq_t));
-    memcpy(new_node.left, &head[0], sizeof(char_freq_t));
-    
-    new_node.right = malloc(sizeof(char_freq_t));
-    memcpy(new_node.right, &head[1], sizeof(char_freq_t));
+    char_freq_t *head = list.head;
+    char_freq_t *left = malloc(sizeof(char_freq_t)), *right = malloc(sizeof(char_freq_t));
+
+    memcpy(left, &list.head[0], sizeof(char_freq_t));
+    memcpy(right, &list.head[1], sizeof(char_freq_t));
+
+    char_freq_t new_node = (char_freq_t) {NULL, 0, head[0].frequency + head[1].frequency, left, right};
 
     int i, jump = 2;
 
@@ -123,7 +124,7 @@ void code_tree(char_freq_t *root, code_list_t *code_list) {
 }
 
 void code_tree_aux(char_freq_t *root, char *code, code_list_t *code_list) {
-    if (root->left == NULL) {
+    if (root->left == NULL && root->right == NULL) {
         (code_list->size)++;
         code_list->head = realloc(code_list->head, code_list->size * sizeof(char_code_t));
 
@@ -148,7 +149,7 @@ void code_tree_aux(char_freq_t *root, char *code, code_list_t *code_list) {
 // Restore Tree
 char_freq_t *restore_tree(code_list_t list) {
     if (list.head == NULL || list.size <= 0) return NULL;
-    code_list_t new_list = {calloc(sizeof(char_code_t), list.size), list.size};
+    code_list_t new_list = {calloc(list.size, sizeof(char_code_t)), list.size};
 
     for (int i = 0; i < list.size; i++) {
         int j = 0;
@@ -158,30 +159,36 @@ char_freq_t *restore_tree(code_list_t list) {
         for (int k = i; k > j; k--) new_list.head[k] = new_list.head[k-1];
         new_list.head[j] = list.head[i];
     }
-
+    
     return restore_tree_aux(new_list, 0);
 }
 
 char_freq_t *restore_tree_aux(code_list_t list, int bits) {
-    char_freq_t *node = calloc(sizeof(char_freq_t), 1);
+    char_freq_t *node = calloc(1, sizeof(char_freq_t));
 
+    if (list.size <= 0) return NULL;
+    
     if (list.size == 1) {
         node->character = list.head[0].character;
         node->is_char = 1;
-
+        
         return node;
     }
-
+    
     int index = 1, new_size;
     bits++;
-
-    while (list.head[index].code != NULL
+    
+    while (index < list.size && list.head[index].code != NULL
         && strncmp(list.head[0].code, list.head[index].code, bits) == 0) {
         index++;
     }
 
-    new_size = list.size -index;
-    code_list_t new_list = {calloc(sizeof(char_code_t), new_size), new_size};
+    if (index >= list.size && list.head[index - 1].code[bits - 1] == 0) {
+        index = 0;
+    }
+
+    new_size = list.size - index;
+    code_list_t new_list = {calloc(new_size, sizeof(char_code_t)), new_size};
     
     memcpy(new_list.head, &list.head[index], sizeof(char_code_t) * new_size);
     list.head = realloc(list.head, sizeof(char_code_t) * index);
@@ -209,7 +216,7 @@ void print_tree(char_freq_t *root, char *spacing) {
         return;
     }
     
-    char *new_spacing = calloc(1, strlen(spacing) + 3);
+    char *new_spacing = calloc(strlen(spacing) + 3, 1);
     sprintf(new_spacing, "  %s", spacing);
     
     printf("%s-\n", spacing);

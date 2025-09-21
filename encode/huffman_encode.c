@@ -9,6 +9,7 @@
 
 #include "cnvchar.h"
 #include "huffman_encode.h"
+#include "path_manager.h"
 
 int files_number;
 
@@ -34,7 +35,7 @@ void dir_iterate(void (*file_func) (char const *, va_list args), const char *dir
     while ((file = readdir(dir)) != NULL) {
         if (file->d_name[0] == '.') continue;
 
-        file_path = calloc(100, 1);
+        file_path = calloc(strlen(dir_path) + 102, 1);
         strcpy(file_path, dir_path);
         strcat(file_path, "/");
         strcat(file_path, file->d_name);
@@ -68,8 +69,14 @@ void scan_file_characters(const char *file_path, va_list args) {
     int start_buffer = 0;
     
     strcpy(filename, file_path);
-    strcpy(buffer, basename(filename));
-            
+    
+    char *slash = strchr(filename, '/');
+    if (slash) {
+        memmove(filename, slash + 1, strlen(slash)); 
+        filename = realloc(filename, strlen(slash) + 1);
+    }
+
+    strcpy(buffer, filename);
     scan_str(buffer, &start_buffer);
 
     while (fgets(buffer + start_buffer, BUFFER_SIZE - start_buffer, file)) {
@@ -96,14 +103,14 @@ void scan_str(char buffer[], int *start_buffer) {
         char *utf8_character = calloc(5, sizeof(char));
         
         if (utf8proc_codepoint_valid(utf8_codepoint)) {
-            utf8proc_encode_char(utf8_codepoint, utf8_character);
+            utf8proc_encode_char(utf8_codepoint, (utf8proc_uint8_t*) utf8_character);
             add_character(&char_list, utf8_character);
         }
     }
 }
 
 void compress_dir(const char *dir_path) {
-    char compressed_file_name[100];
+    char compressed_file_name[200];
     sprintf(compressed_file_name, "./%s.huff", dir_path);
     FILE *compressed_file = fopen(compressed_file_name, "wb");
 
@@ -136,17 +143,26 @@ void compress_file(const char *file_path, va_list args) {
     }
 
     char buffer[BUFFER_SIZE] = {0}, *filename = calloc(strlen(file_path) + 1, 1);
-    unsigned char compressed_buffer[BUFFER_SIZE] = {0};
+    utf8proc_uint8_t compressed_buffer[BUFFER_SIZE] = {0};
     int start_buffer = 0, compressed_bits = 0, filename_bit_count = 0, file_bit_count = 0;
     
     strcpy(filename, file_path);
-    strcpy(buffer, basename(filename));
+    
+    char *slash = strchr(filename, '/');
+    if (slash) {
+        memmove(filename, slash + 1, strlen(slash)); 
+        filename = realloc(filename, strlen(slash) + 1);
+    }
+
+    strcpy(buffer, filename);
+
+    long file_start = ftell(compressed_file);
     fwrite(&filename_bit_count, sizeof(filename_bit_count), 1, compressed_file);
     fwrite(&file_bit_count, sizeof(file_bit_count), 1, compressed_file);
             
     encode_str(buffer, &start_buffer, compressed_file, compressed_buffer, &compressed_bits, &filename_bit_count);
 
-    if (compressed_bits > 0) fwrite(compressed_buffer, 1, strlen(compressed_buffer), compressed_file);
+    if (compressed_bits > 0) fwrite(compressed_buffer, 1, strlen((char*) compressed_buffer), compressed_file);
     memset(buffer, 0, BUFFER_SIZE);
     memset(compressed_buffer, 0, BUFFER_SIZE);
 
@@ -158,9 +174,9 @@ void compress_file(const char *file_path, va_list args) {
         memset(buffer, 0, BUFFER_SIZE);
     }
 
-    if (compressed_bits > 0) fwrite(compressed_buffer, 1, strlen(compressed_buffer), compressed_file);
+    if (compressed_bits > 0) fwrite(compressed_buffer, 1, strlen((char*) compressed_buffer), compressed_file);
 
-    fseek(compressed_file, -(ceil(filename_bit_count / 8.0) + ceil(file_bit_count / 8.0) + sizeof(int) * 2), SEEK_CUR);
+    fseek(compressed_file, file_start, SEEK_SET);
     fwrite(&filename_bit_count, sizeof(filename_bit_count), 1, compressed_file);
     fwrite(&file_bit_count, sizeof(filename_bit_count), 1, compressed_file);
     fseek(compressed_file, 0, SEEK_END);
@@ -187,7 +203,7 @@ void encode_str(char buffer[], int *start_buffer, FILE *file, unsigned char comp
         char *utf8_character = calloc(5, sizeof(char));
         
         if (utf8proc_codepoint_valid(utf8_codepoint)) {
-            utf8proc_encode_char(utf8_codepoint, utf8_character);
+            utf8proc_encode_char(utf8_codepoint, (utf8proc_uint8_t*) utf8_character);
             char *character_code = search_code(&code_list, utf8_character);
             record_encoded_str(character_code, file, compressed_buffer, encoded_bits, bit_count);
         }
