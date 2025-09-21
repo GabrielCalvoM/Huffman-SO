@@ -25,7 +25,9 @@ void add_character(char_list_t *list, char *character) {
     list->size++;
     list->head = realloc(list->head, list->size * sizeof(char_freq_t));
     list->head[list->size - 1].character = malloc(strlen(character) + 1);
+
     strcpy(list->head[list->size - 1].character, character);
+    
     list->head[list->size - 1].is_char = 1;
     list->head[list->size - 1].frequency = 1;
     list->head[list->size - 1].left = NULL;
