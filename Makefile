@@ -7,8 +7,8 @@ CC = gcc
 CFLAGS = -Wall
 LIBS =  -lutf8proc -lm
 
-huffman: $(CNV).o $(PATHM).o $(ENCODE).o $(DECODE).o huffman.c
-	$(CC) $(CFLAGS) -Iencode -Idecode -o huffman $(CNV).o $(PATHM).o $(ENCODE).o $(DECODE).o huffman.c $(LIBS)
+huffman: $(CNV).o $(PATHM).o $(ENCODE).o $(DECODE).o main_huffman.c
+	$(CC) $(CFLAGS) -Iencode -Idecode -Ipath_manager -o huffman $(CNV).o $(PATHM).o $(ENCODE).o $(DECODE).o main_huffman.c $(LIBS)
 
 $(CNV).o: $(CNV).c
 	$(CC) $(CFLAGS) -c $(CNV).c -o $(CNV).o

@@ -34,6 +34,26 @@ void add_character(char_list_t *list, char *character) {
     list->head[list->size - 1].right = NULL;
 }
 
+void add_frequency(char_list_t *list, char_freq_t *frequency) {
+    char_freq_t *found = search_character(list, frequency->character);
+
+    if (found != NULL) {
+        found->frequency += frequency->frequency;
+        return;
+    }
+
+    list->size++;
+    list->head = realloc(list->head, list->size * sizeof(char_freq_t));
+    list->head[list->size - 1].character = malloc(strlen(frequency->character) + 1);
+
+    strcpy(list->head[list->size - 1].character, frequency->character);
+    
+    list->head[list->size - 1].is_char = 1;
+    list->head[list->size - 1].frequency = frequency->frequency;
+    list->head[list->size - 1].left = NULL;
+    list->head[list->size - 1].right = NULL;
+}
+
 // order_list_by_frequency
 void order_list_by_frequency(char_list_t *list) {
     if (list->head == NULL || list->size <= 1) return;

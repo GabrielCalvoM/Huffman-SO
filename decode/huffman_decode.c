@@ -1,21 +1,32 @@
 #include <dirent.h>
 #include <libgen.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <utf8proc.h>
 
 #include "cnvchar.h"
 #include "huffman_decode.h"
 #include "path_manager.h"
 
+#define MAX_COUNTER 100
+
 int start_files = 0, compressed_files_number;
 long *file_pointers;                            // byte del archivo donde comienza la lectura de cada archivo
 char_freq_t *tree, *tree_pointer;
 // tree = arbol de codigos
 // tree_pointer = nodo actual del arbol
+program_mode_t decode_mode = SEQUENTIAL;
+pthread_t decode_threads[MAX_COUNTER] = {0};
+pid_t decode_forks[MAX_COUNTER] = {0};
+int decode_counter = MAX_COUNTER;
+
+pthread_mutex_t decode_mutex;
+pthread_cond_t decode_cond;
 
 void decompress_file(FILE*, const char*, int);
 void decompress_char(char, char[], int*, int*, int);
@@ -189,4 +200,25 @@ void decompress_char(char character, char buffer[], int *index, int *decompresse
         *index += strlen(tree_pointer->character);
         tree_pointer = tree;
     }
+}
+
+int decode_main(int argc, char *argv[]) {
+    if (argc < 4) {
+        printf("ERROR: not sufficient arguments");
+        return 0;
+    }
+    
+    char *file_path = calloc(1, strlen(argv[2]) + 3);
+    char *dir_path = calloc(1, strlen(argv[3]) + 3);
+    sprintf(file_path, "./%s", argv[2]);
+    sprintf(dir_path, "./%s", argv[3]);
+
+    if (argc >= 5) decode_mode = strcmp(argv[4], "--thread") == 0
+                                 ? CONCURRENT : strcmp(argv[4], "--fork") == 0
+                                 ? PARALLEL : SEQUENTIAL;
+    
+    scan_huff(file_path);
+    decompress_dir(file_path, dir_path);
+
+    return 0;
 }

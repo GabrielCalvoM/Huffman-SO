@@ -1,26 +1,100 @@
 #include <dirent.h>
 #include <libgen.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <utf8proc.h>
 
 #include "cnvchar.h"
 #include "huffman_encode.h"
 #include "path_manager.h"
 
-int files_number;
+#define MAX_COUNTER 100
 
-void scan_file_characters(const char*, va_list);
-void scan_str(char buffer[], int *start_buffer);
-void compress_file(const char*, va_list);
+int *files_number;
+pthread_t encode_threads[MAX_COUNTER] = {0};
+thread_encode_args_t encode_thread_args[MAX_COUNTER] = {0};
+pid_t *encode_forks;
+int *is_occupied;
+long *encode_file_pointer;
+
+program_mode_t encode_mode = SEQUENTIAL;
+pthread_mutex_t *encode_mutex;
+pthread_cond_t *encode_cond;
+
+int encode_counter = MAX_COUNTER;
+
+void file_func_thread(void (*file_func) (char const *, int), char const*, int);
+void *unpack_thread(void*);
+void file_func_fork(void (*file_func) (char const *, int), char const*, int);
+void scan_file_characters(const char*, int);
+void scan_str(char[], int*, char_list_t*);
+void add_compressed_file(const char*, int);
+void compress_file(const char*, int);
 void encode_str(char[], int*, FILE*, unsigned char[], int*, int*);
 void record_encoded_str(const char*, FILE*, unsigned char*, int*, int*);
 
+void wait_encode() {
+    pthread_mutex_lock(encode_mutex);
+    while (encode_counter <= 0) {
+        pthread_cond_wait(encode_cond, encode_mutex);
+    }
+    encode_counter--;
+    pthread_mutex_unlock(encode_mutex);
+}
 
-void dir_iterate(void (*file_func) (char const *, va_list args), const char *dir_path, ...) {
+void signal_encode() {
+    pthread_mutex_lock(encode_mutex);
+    encode_counter++;
+    pthread_cond_signal(encode_cond);
+    pthread_mutex_unlock(encode_mutex);
+}
+
+void wait_encode_threads() {
+    for (int i = 0; i < MAX_COUNTER; i++) {
+        pthread_join(encode_threads[i], NULL);
+    }
+}
+
+void wait_encode_forks() {
+    for (int i = 0; i < MAX_COUNTER; i++) {
+        waitpid(encode_forks[i], NULL, 0);
+    }
+}
+
+void wait_encode_program() {
+    if (encode_mode == CONCURRENT) wait_encode_threads();
+    else if (encode_mode == PARALLEL) wait_encode_forks();
+}
+
+int get_first_avilable() {
+    for (int i = 0; i < MAX_COUNTER; i++) {
+        if (is_occupied[i] == 0) {
+            wait_encode();
+            is_occupied[i] = 1;
+
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void free_space(int i) {
+    if (encode_mode == CONCURRENT) encode_thread_args[i] = (thread_encode_args_t) {NULL, NULL, 0};
+    if (encode_mode == PARALLEL) encode_forks[i] = 0;
+    
+    is_occupied[i] = 0;
+    signal_encode();
+}
+
+void dir_iterate(void (*file_func) (char const *, int), const char *dir_path, program_mode_t mode) {
     // Aplica una función a cada archivo de un directorio
     
     struct dirent *file;    // Archivo de directorio
@@ -32,8 +106,7 @@ void dir_iterate(void (*file_func) (char const *, va_list args), const char *dir
     }
     
     char *file_path;
-    va_list args;
-    va_start(args, dir_path);   // Inicializa los parámetros variadicos
+    int pos = 0;
 
     while ((file = readdir(dir)) != NULL) {
         if (file->d_name[0] == '.') continue;
@@ -43,25 +116,61 @@ void dir_iterate(void (*file_func) (char const *, va_list args), const char *dir
         strcat(file_path, "/");
         strcat(file_path, file->d_name);    // Obtiene la ruta del archivo
 
-        va_list args_copy;
-        va_copy(args_copy, args);
-        file_func(file_path, args_copy);
-        va_end(args_copy);
+        if (dir_is_valid(file_path)) continue;    // No soporta subdirectorios
+
+        if (mode == CONCURRENT) file_func_thread(file_func, file_path, pos);
+        else if (mode == PARALLEL) file_func_fork(file_func, file_path, pos);
+        else file_func(file_path, pos);
+
+        pos++;
     }
-    
-    va_end(args);
+
+    wait_encode_program();
     closedir(dir);
 }
 
-void scan_dir_characters(const char *path) {
-    dir_iterate(scan_file_characters, path);    // Scanea la frecuencia de caracteres de cada archivo
-    char_freq_t *tree = construct_tree(char_list);  // Construye el árbol de frecuencias
-    code_tree(tree, &code_list);    // Genera una lista con el código respectivo de cada caracter
+void file_func_thread(void (*file_func) (char const *, int), char const *file_path, int file_pos) {
+    int index = get_first_avilable();
+    encode_thread_args[index] = (thread_encode_args_t) {file_func, file_path, file_pos};
+    
+    pthread_create(&encode_threads[index], NULL, unpack_thread, &encode_thread_args[index]);
 }
 
-void scan_file_characters(const char *file_path, va_list args) {
-    if (dir_is_valid(file_path)) return;    // No soporta subdirectorios
-    
+void *unpack_thread(void *args_pointer) {
+    thread_encode_args_t *args = (thread_encode_args_t*) args_pointer;
+
+    void (*file_func) (char const *, int) = args->file_func;
+    int index = 0;
+
+    file_func(args->dir_path, args->file_pos);
+
+    for (index = 0; index < MAX_COUNTER - 1; index++) if (args == &encode_thread_args[index]) break;
+    free_space(index);
+
+    return NULL;
+}
+
+void file_func_fork(void (*file_func) (char const *, int), char const *file_path, int file_pos) {
+    int index = get_first_avilable();
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        file_func(file_path, file_pos);
+        free_space(index);
+
+        exit(0);
+    }
+
+    encode_forks[index] = pid;
+}
+
+void scan_dir_characters(const char *path) {
+    dir_iterate(scan_file_characters, path, SEQUENTIAL);    // Scanea la frecuencia de caracteres de cada archivo
+    char_freq_t *tree = construct_tree(char_list);          // Construye el árbol de frecuencias
+    code_tree(tree, &code_list);                            // Genera una lista con el código respectivo de cada caracter
+}
+
+void scan_file_characters(const char *file_path, int pos) {
     FILE *file = fopen(file_path, "r");
 
     if (file == NULL) {
@@ -69,24 +178,40 @@ void scan_file_characters(const char *file_path, va_list args) {
         return;
     }
 
-    files_number++;
+    if (encode_mode != SEQUENTIAL) {
+        pthread_mutex_lock(encode_mutex);
+        (*files_number)++;
+        pthread_mutex_unlock(encode_mutex);
+    }
+    else (*files_number)++;
+
     char buffer[BUFFER_SIZE], *filename;
     int start_buffer = 0;
+    char_list_t list = {NULL, 0};
     
     filename = strchr(file_path, '/') + 1;
     if (filename == NULL) filename = file_path; // Obtiene nombre del archivo
 
     strcpy(buffer, filename);
-    scan_str(buffer, &start_buffer);
+    scan_str(buffer, &start_buffer, &list);
 
     while (fgets(buffer + start_buffer, BUFFER_SIZE - start_buffer, file)) {
-        scan_str(buffer, &start_buffer);
+        scan_str(buffer, &start_buffer, &list);
     }
 
+    for (int i = 0; i < list.size; i++) {
+        if (encode_mode != SEQUENTIAL) {
+            pthread_mutex_lock(encode_mutex);
+            add_frequency(&char_list, &list.head[i]);
+            pthread_mutex_unlock(encode_mutex);
+        }
+        else add_frequency(&char_list, &list.head[i]);
+    }
+    
     fclose(file);
 }
 
-void scan_str(char buffer[], int *start_buffer) {
+void scan_str(char buffer[], int *start_buffer, char_list_t *list) {
     // Aumenta la frecuencia de los caracteres en 1 según los vaya leyendo
 
     utf8proc_uint8_t *utf8_buffer = (utf8proc_uint8_t*) buffer; // Puntero al caracter actual analizando
@@ -110,15 +235,15 @@ void scan_str(char buffer[], int *start_buffer) {
         
         if (utf8proc_codepoint_valid(utf8_codepoint)) {
             utf8proc_encode_char(utf8_codepoint, (utf8proc_uint8_t*) utf8_character);
-            add_character(&char_list, utf8_character); // Incrementa la frecuencia del caracter encontrado en 1
+            add_character(list, utf8_character); // Incrementa la frecuencia del caracter encontrado en 1
         }
     }
 }
 
 void compress_dir(const char *dir_path) {
-    char compressed_file_name[200];
-    sprintf(compressed_file_name, "./%s.huff", dir_path);
-    FILE *compressed_file = fopen(compressed_file_name, "wb"); // Crea archivo comprimido
+    char compressed_filename[200];
+    sprintf(compressed_filename, "./%s.huff", dir_path);
+    FILE *compressed_file = fopen(compressed_filename, "wb"); // Crea archivo comprimido
 
     if (compressed_file == NULL) {
         perror("fopen");
@@ -132,18 +257,54 @@ void compress_dir(const char *dir_path) {
         fwrite(code_list.head[i].code, 1, strlen(code_list.head[i].code) + 1, compressed_file);
     }
 
-    fwrite(&files_number, sizeof(files_number), 1, compressed_file);
+    fwrite(files_number, sizeof(*files_number), 1, compressed_file);
+    long file_actual_pos = ftell(compressed_file);
 
-    dir_iterate(compress_file, dir_path, compressed_file); // Agrega la compresion de cada archivo al archivo comprimido
+    encode_file_pointer = encode_mode == PARALLEL
+                            ? mmap(NULL, (*files_number) + 1 * sizeof(long), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0)
+                            : calloc((*files_number) + 1, sizeof(long));
 
+    dir_iterate(compress_file, dir_path, encode_mode); // Agrega la compresion de cada archivo al archivo comprimido
     fclose(compressed_file);
+
+    for (int i = 0; i < (*files_number); i++) {
+        encode_file_pointer[i] += file_actual_pos;
+        file_actual_pos = encode_file_pointer[i];
+        
+        if (encode_mode == CONCURRENT) file_func_thread(add_compressed_file, compressed_filename, i);
+        else if (encode_mode == PARALLEL) file_func_fork(add_compressed_file, compressed_filename, i);
+        else add_compressed_file(compressed_filename, i);
+    }
+    
+    wait_encode_program();
 }
 
-void compress_file(const char *file_path, va_list args) {
-    if (dir_is_valid(file_path)) return;    // No soporta subdirectorios
+void add_compressed_file(const char *compressed_filename, int i) {
+    char file_buff_name[20];
+    sprintf(file_buff_name, ".buff_f%d", i);
+    FILE *file = fopen(file_buff_name, "rb"), *compressed_file = fopen(compressed_filename, "rb+");
     
-    FILE *compressed_file = va_arg(args, FILE*);    // Archivo de compresion
-    FILE *file = fopen(file_path, "r");             // Archivo a comprimir
+    char buffer[BUFFER_SIZE] = {0};
+    int read_size = 0;
+    
+    fseek(compressed_file, encode_file_pointer[i], SEEK_SET);
+    printf("%ld\n", ftell(compressed_file));
+    
+    while ((read_size = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        fwrite(buffer, 1, read_size, compressed_file);
+    }
+
+    fclose(compressed_file);
+    fclose(file);
+    remove(file_buff_name);
+}
+
+void compress_file(const char *file_path, int file_pos) {
+    char file_buff_name[20];
+    sprintf(file_buff_name, ".buff_f%d", file_pos);
+    
+    FILE *compressed_file = fopen(file_buff_name, "wb");    // Archivo de compresion
+    FILE *file = fopen(file_path, "r");                     // Archivo a comprimir
 
     if (file == NULL) {
         perror("fopen");
@@ -188,6 +349,7 @@ void compress_file(const char *file_path, va_list args) {
     if (compressed_bits > 0) fwrite(compressed_buffer, 1, strlen((char*) compressed_buffer), compressed_file);
 
     file_bytes = (int) ftell(compressed_file) - file_start;
+    encode_file_pointer[file_pos + 1] = file_bytes;
 
     fseek(compressed_file, file_start, SEEK_SET);
     fwrite(&file_bytes, sizeof(file_bytes), 1, compressed_file);                // registra los datos de descompresion
@@ -269,4 +431,48 @@ void record_encoded_str(const char *str, FILE *file, unsigned char buffer[], int
         char_buffer <<= (8 - bit_pointer);
         buffer[buffer_bytes] |= char_buffer;
     }
+}
+
+int encode_main(int argc, char *argv[]) {
+    if (argc < 3) {
+        printf("ERROR: not sufficient arguments");
+        return 0;
+    }
+    
+    if (argc >= 4) encode_mode = strcmp(argv[3], "--thread") == 0
+                                 ? CONCURRENT : strcmp(argv[3], "--fork") == 0
+                                 ? PARALLEL : SEQUENTIAL;
+
+    if (encode_mode == CONCURRENT) {
+        encode_mutex = calloc(1, sizeof(pthread_mutex_t));
+        encode_cond = calloc(1, sizeof(pthread_cond_t));
+        is_occupied = calloc(MAX_COUNTER, sizeof(pthread_mutex_t));
+
+        pthread_mutex_init(encode_mutex, NULL);
+        pthread_cond_init(encode_cond, NULL);
+    }
+
+    if (encode_mode == PARALLEL) {
+        encode_mutex = mmap(NULL, sizeof(pthread_mutex_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        encode_cond = mmap(NULL, sizeof(pthread_cond_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        encode_forks = mmap(NULL, MAX_COUNTER * sizeof(pid_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        is_occupied = mmap(NULL, MAX_COUNTER * sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        files_number = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+
+        pthread_mutex_init(encode_mutex, NULL);
+        pthread_cond_init(encode_cond, NULL);
+    } else {
+        files_number = calloc(1, sizeof(int));
+    }
+    
+
+    scan_dir_characters(argv[2]);
+    compress_dir(argv[2]);
+
+    if (encode_mode != SEQUENTIAL) {
+        pthread_mutex_destroy(encode_mutex);
+        pthread_cond_destroy(encode_cond);
+    }
+    
+    return 0;
 }
