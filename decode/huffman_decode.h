@@ -9,10 +9,11 @@
 #define BUFFER_SIZE 1024
 #endif // BUFFER_SIZE
 
-extern program_mode_t decode_mode;
-
-extern pthread_mutex_t decode_mutex;
-extern pthread_cond_t decode_cond;
+typedef struct {
+    FILE *file;
+    char *dir_path;
+    int file_pos;
+} thread_decode_args_t;
 
 void scan_huff(const char *file_path);
 void decompress_dir(const char *compressed_path, const char *dir_path);

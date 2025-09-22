@@ -5,8 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #include <utf8proc.h>
 
 #include "cnvchar.h"
@@ -20,16 +22,108 @@ long *file_pointers;                            // byte del archivo donde comien
 char_freq_t *tree, *tree_pointer;
 // tree = arbol de codigos
 // tree_pointer = nodo actual del arbol
-program_mode_t decode_mode = SEQUENTIAL;
 pthread_t decode_threads[MAX_COUNTER] = {0};
-pid_t decode_forks[MAX_COUNTER] = {0};
+thread_decode_args_t decode_thread_args[MAX_COUNTER] = {0};
+pid_t *decode_forks;
+int *decode_occupied;
+
+program_mode_t decode_mode = SEQUENTIAL;
+pthread_mutex_t *decode_mutex;
+pthread_cond_t *decode_cond;
+
 int decode_counter = MAX_COUNTER;
 
-pthread_mutex_t decode_mutex;
-pthread_cond_t decode_cond;
-
+void *unpack_thread_decode(void*);
 void decompress_file(FILE*, const char*, int);
 void decompress_char(char, char[], int*, int*, int);
+
+void wait_decode() {
+    pthread_mutex_lock(decode_mutex);
+    while (decode_counter <= 0) {
+        pthread_cond_wait(decode_cond, decode_mutex);
+    }
+    decode_counter--;
+    pthread_mutex_unlock(decode_mutex);
+}
+
+void signal_decode() {
+    pthread_mutex_lock(decode_mutex);
+    decode_counter++;
+    pthread_cond_signal(decode_cond);
+    pthread_mutex_unlock(decode_mutex);
+}
+
+void wait_decode_threads() {
+    for (int i = 0; i < MAX_COUNTER; i++) {
+        pthread_join(decode_threads[i], NULL);
+    }
+}
+
+void wait_decode_forks() {
+    for (int i = 0; i < MAX_COUNTER; i++) {
+        waitpid(decode_forks[i], NULL, 0);
+    }
+}
+
+void wait_decode_program() {
+    if (decode_mode == CONCURRENT) wait_decode_threads();
+    else if (decode_mode == PARALLEL) wait_decode_forks();
+}
+
+int get_decode_avilable() {
+    for (int i = 0; i < MAX_COUNTER; i++) {
+        if (decode_occupied[i] == 0) {
+            wait_decode();
+            decode_occupied[i] = 1;
+
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void free_decode(int i) {
+    if (decode_mode == CONCURRENT) decode_thread_args[i] = (thread_decode_args_t) {NULL, NULL, 0};
+    if (decode_mode == PARALLEL) decode_forks[i] = 0;
+    
+    decode_occupied[i] = 0;
+    signal_decode();
+}
+
+void decode_thread(FILE *compressed_file, char const *file_path, int file_pos) {
+    int index = get_decode_avilable();
+    decode_thread_args[index] = (thread_decode_args_t) {compressed_file, file_path, file_pos};
+    
+    pthread_create(&decode_threads[index], NULL, unpack_thread_decode, &decode_thread_args[index]);
+}
+
+void *unpack_thread_decode(void *args_pointer) {
+    thread_decode_args_t *args = (thread_decode_args_t*) args_pointer;
+
+    int index = 0;
+
+    decompress_file(args->file, args->dir_path, args->file_pos);
+
+    for (index = 0; index < MAX_COUNTER - 1; index++) if (args == &decode_thread_args[index]) break;
+    free_decode(index);
+
+    return NULL;
+}
+
+void decode_fork(FILE *compressed_file, char const *file_path, int file_pos) {
+    int index = get_decode_avilable();
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        decompress_file(compressed_file, file_path, file_pos);
+        free_decode(index);
+
+        exit(0);
+    }
+
+    decode_forks[index] = pid;
+}
 
 void scan_huff(const char *file_path) {
     // Escanea los códigos de cada caracter
@@ -123,6 +217,7 @@ void decompress_dir(const char *compressed_path, const char *dir_path) {
     construct_dir(dir_path);    // Si el directorio para guardar los archivos no existe, lo crea
     
     for (int i = 0; i < compressed_files_number; i++) {
+        if (decode_mode == PARALLEL) {}
         FILE *actual_file = fopen(compressed_path, "rb");
         decompress_file(actual_file, dir_path, i);
     }
@@ -216,9 +311,33 @@ int decode_main(int argc, char *argv[]) {
     if (argc >= 5) decode_mode = strcmp(argv[4], "--thread") == 0
                                  ? CONCURRENT : strcmp(argv[4], "--fork") == 0
                                  ? PARALLEL : SEQUENTIAL;
+
+    if (decode_mode == CONCURRENT) {
+        decode_mutex = calloc(1, sizeof(pthread_mutex_t));
+        decode_cond = calloc(1, sizeof(pthread_cond_t));
+        decode_occupied = calloc(MAX_COUNTER, sizeof(pthread_mutex_t));
+
+        pthread_mutex_init(decode_mutex, NULL);
+        pthread_cond_init(decode_cond, NULL);
+    }
+
+    if (decode_mode == PARALLEL) {
+        decode_mutex = mmap(NULL, sizeof(pthread_mutex_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        decode_cond = mmap(NULL, sizeof(pthread_cond_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        decode_forks = mmap(NULL, MAX_COUNTER * sizeof(pid_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        decode_occupied = mmap(NULL, MAX_COUNTER * sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+
+        pthread_mutex_init(decode_mutex, NULL);
+        pthread_cond_init(decode_cond, NULL);
+    }
     
     scan_huff(file_path);
     decompress_dir(file_path, dir_path);
+
+    if (decode_mode != SEQUENTIAL) {
+        pthread_mutex_destroy(decode_mutex);
+        pthread_cond_destroy(decode_cond);
+    }
 
     return 0;
 }
