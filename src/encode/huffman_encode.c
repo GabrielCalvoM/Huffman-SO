@@ -46,7 +46,8 @@ void add_compressed_file(const char*, int);
 void compress_file(const char*, int);
 void encode_str(char[], int*, FILE*, unsigned char[], int*, int*);
 void record_encoded_str(const char*, FILE*, unsigned char*, int*, int*);
-void compress_single_file(const char*);
+void compress_single_file(const char*, const char*);
+void compress_dir(const char*, const char*);
 
 void wait_encode() {
     pthread_mutex_lock(encode_mutex);

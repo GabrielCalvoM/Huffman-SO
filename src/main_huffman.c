@@ -5,6 +5,7 @@
 #include "huffman_encode.h"
 #include "huffman_decode.h"
 
+// wow neat prints
 void print_usage(const char *program_name) {
 	printf("╔══════════════════════════════╗ \n");
     printf("║ [OS - P1] Huffman Algorithm  ║ \n");
@@ -18,18 +19,18 @@ void print_usage(const char *program_name) {
     printf("  decode  - Decompress a .huff file\n\n");
     
     printf("<Encode> Examples:\n");
-    printf("  %s -e file.txt                      		# Creates file.txt.huff\n", program_name);
-    printf("  %s -e file.txt compressed.huff	    	# Creates compressed.huff\n", program_name);
-    printf("  %s -e dir			                	    # Creates dir.huff\n", program_name);
-    printf("  %s -e dir archive.huff	        		# Creates archive.huff\n", program_name);
-    printf("  %s -e myfile.txt output.huff --thread 	# Use threading [CONCURRENT] \n", program_name);
-    printf("  %s -e mydirectory archive --fork      	# Use forking [PARALELISM] \n\n", program_name);
+    printf("  %s -e file.txt 				# Creates file.txt.huff\n", program_name);
+    printf("  %s -e file.txt compressed.huff	    		# Creates compressed.huff\n", program_name);
+    printf("  %s -e dir			               	# Creates dir.huff\n", program_name);
+    printf("  %s -e dir archive.huff	       			# Creates archive.huff\n", program_name);
+    printf("  %s -e myfile.txt output.huff --thread 		# Use threading [CONCURRENT] \n", program_name);
+    printf("  %s -e mydirectory archive --fork     		# Use forking [PARALELISM] \n\n", program_name);
     
     printf("<Decode> Examples:\n");
-    printf("  %s -d compressed.huff output_dir      	# Decompress to output_dir/\n", program_name);
-    printf("  %s -d archive.huff extracted_files    	# Decompress to extracted_files/\n", program_name);
+    printf("  %s -d compressed.huff output_dir      		# Decompress to output_dir/\n", program_name);
+    printf("  %s -d archive.huff extracted_files    		# Decompress to extracted_files/\n", program_name);
     printf("  %s -d file.huff . 		            	# Decompress to current directory\n", program_name);
-    printf("  %s -d file.huff . --thread				# Use threading [CONCURRENT]\n", program_name);
+    printf("  %s -d file.huff . --thread			# Use threading [CONCURRENT]\n", program_name);
     printf("  %s -d file.huff . --fork      			# Use forking [PARALELISM ]\n\n", program_name);
     
     printf("[Options]\n");

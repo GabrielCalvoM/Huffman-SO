@@ -15,8 +15,10 @@ typedef struct {
     int file_pos;
 } thread_encode_args_t;
 
+void compress_dir(const char *dir_path, const char *output_path);
+void compress_single_file(const char *file_path, const char *output_path);
 void scan_dir_characters(const char *path);
-void compress_dir(const char *dir_path);
+void scan_single_file_characters(const char *file_path);
 int encode_main(int argc, char *argv[]);
 
 #endif // HUFFMAN_ENCODE_H
