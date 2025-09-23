@@ -13,8 +13,10 @@ void start_chronometer() {
 
 void stop_chronometer(const char* operation) {
     end_time = clock();
-    double time_taken = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
+    double time_taken = ((double)(end_time - start_time)) * 1000.0 / CLOCKS_PER_SEC;
+    printf("\n");
     printf("\n=== CHRONOMETER ===\n");
-    printf("%s completed in: %.6f seconds\n", operation, time_taken);
+    printf("%s completed in: %.6f ms\n", operation, time_taken);
     printf("===================\n\n");
+	printf("\n");
 }

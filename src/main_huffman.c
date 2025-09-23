@@ -39,10 +39,12 @@ void print_usage(const char *program_name) {
     printf("  (no option) Sequential processing (default)\n\n");
     
     printf("[INFO]: \n");
+    printf("  • Dummy directories CP and DP are provided with the sole purpose of storing files\n");
     printf("  • For encoding, output parameter is optional\n");
     printf("  • For decoding, output directory is required\n");
     printf("  • .huff extension is added automatically if not provided\n");
     printf("  • Type -h for help instead of < -e|-d > to read this info again \n");
+    printf("\n\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -51,10 +53,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    if (strcmp(argv[1], "-e") == 0) {
+    // aligned IF flags
+		 if (strcmp(argv[1], "-e") == 0) {
         return encode_main(argc, argv);
     } 
-    else if (strcmp(argv[1], "-e") == 0) {
+    else if (strcmp(argv[1], "-d") == 0) {
         return decode_main(argc, argv);
     } 
     else if (strcmp(argv[1], "-h") == 0) {
