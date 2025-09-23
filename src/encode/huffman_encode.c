@@ -1,3 +1,5 @@
+//////////////////////////////////////////////////////////////////////////////
+
 #include <dirent.h>
 #include <libgen.h>
 #include <math.h>
@@ -516,17 +518,6 @@ void record_encoded_str(const char *str, FILE *file, unsigned char buffer[], int
 }
 
 int encode_main(int argc, char *argv[]) {
-    if (argc < 3) {
-        printf("Usage: %s <encode> <input_file_or_directory> [output_file] [--thread|--fork]\n", argv[0]);
-        printf("  Compresses a single file or entire directory\n");
-        printf("  Examples:\n");
-        printf("    %s encode myfile.txt                    # Creates myfile.txt.huff\n", argv[0]);
-        printf("    %s encode myfile.txt compressed.huff    # Creates compressed.huff\n", argv[0]);
-        printf("    %s encode mydirectory                   # Creates mydirectory.huff\n", argv[0]);
-        printf("    %s encode mydirectory archive.huff      # Creates archive.huff\n", argv[0]);
-        return 0;
-    }
-    
     start_chronometer();
     
     char *output_path = NULL;
@@ -563,7 +554,9 @@ int encode_main(int argc, char *argv[]) {
 
         pthread_mutex_init(encode_mutex, NULL);
         pthread_cond_init(encode_cond, NULL);
-    } else {
+    } 
+    
+    else {
         files_number = calloc(1, sizeof(int));
     }
     

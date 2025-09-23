@@ -348,12 +348,6 @@ void decompress_char(char character, char buffer[], int *index, int *decompresse
 }
 
 int decode_main(int argc, char *argv[]) {
-    if (argc < 4) {
-        printf("Usage: %s <decode> <compressed_file.huff> <output_directory> [--thread|--fork]\n", argv[0]);
-        printf("  Decompresses a .huff file to the specified directory\n");
-        return 0;
-    }
-    
     start_chronometer();
     
     char *file_path = calloc(1, strlen(argv[2]) + 3);
