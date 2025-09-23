@@ -1,26 +1,47 @@
-CNV = cnvchar/cnvchar
-PATHM = path_manager/path_manager
-ENCODE = encode/huffman_encode
-DECODE = decode/huffman_decode
+########################################################################
+# PROGRAM MADE BY
+#			Carlos Cabrera de la Espriella
+#			Gabriel Calvo Montero
+########################################################################
+# BASE DIR
+SRCDIR = src
+OBJDIR = src/obj
 
+# Source files
+SOURCES = $(SRCDIR)/cnvchar/cnvchar.c \
+          $(SRCDIR)/path_manager/path_manager.c \
+          $(SRCDIR)/encode/huffman_encode.c \
+          $(SRCDIR)/decode/huffman_decode.c \
+          $(SRCDIR)/chrono/chronometer.c \
+          $(SRCDIR)/main_huffman.c
+
+# Object Files
+OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+
+# All Project Dirs
+INCLUDES = -I$(SRCDIR)/encode \
+           -I$(SRCDIR)/decode \
+           -I$(SRCDIR)/path_manager \
+           -I$(SRCDIR)/chrono \
+           -I$(SRCDIR)/cnvchar
+
+########################################################################
 CC = gcc
 CFLAGS = -Wall
-LIBS =  -lutf8proc -lm
+LIBS = -lutf8proc -lm
 
-huffman: $(CNV).o $(PATHM).o $(ENCODE).o $(DECODE).o main_huffman.c
-	$(CC) $(CFLAGS) -Iencode -Idecode -Ipath_manager -o huffman $(CNV).o $(PATHM).o $(ENCODE).o $(DECODE).o main_huffman.c $(LIBS)
+# Build
+$(shell mkdir -p $(OBJDIR)/cnvchar $(OBJDIR)/path_manager $(OBJDIR)/encode $(OBJDIR)/decode $(OBJDIR)/chrono)
 
-$(CNV).o: $(CNV).c
-	$(CC) $(CFLAGS) -c $(CNV).c -o $(CNV).o
+# Main target
+huffman: $(OBJECTS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o huffman $(OBJECTS) $(LIBS)
 
-$(PATHM).o: $(PATHM).c
-	$(CC) -c $(PATHM).c -o $(PATHM).o
-
-$(ENCODE).o: $(ENCODE).c
-	$(CC) $(CFLAGS) -Icnvchar -Ipath_manager -c $(ENCODE).c -o $(ENCODE).o
-
-$(DECODE).o: $(DECODE).c
-	$(CC) $(CFLAGS) -Icnvchar -Ipath_manager -c $(DECODE).c -o $(DECODE).o
+# Generic rule for object files
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
-	rm -f */*.o huffman
+	rm -rf $(OBJDIR) huffman
+
+.PHONY: clean
