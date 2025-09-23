@@ -21,9 +21,9 @@
 
 int start_files = 0, compressed_files_number;
 long *file_pointers;                            // byte del archivo donde comienza la lectura de cada archivo
-char_freq_t *tree, *tree_pointer;
+char_freq_t *tree, **tree_pointers;
 // tree = arbol de codigos
-// tree_pointer = nodo actual del arbol
+// tree_pointers = nodo actual del arbol
 pthread_t decode_threads[MAX_COUNTER] = {0};
 thread_decode_args_t decode_thread_args[MAX_COUNTER] = {0};
 pid_t *decode_forks;
@@ -37,7 +37,7 @@ int decode_counter = MAX_COUNTER;
 
 void *unpack_thread_decode(void*);
 void decompress_file(FILE*, const char*, int);
-void decompress_char(char, char[], int*, int*, int);
+void decompress_char(char, char[], int*, int*, int, int);
 void decompress_single_file(const char*, const char*);
 
 void wait_decode() {
@@ -128,6 +128,11 @@ void decode_fork(FILE *compressed_file, char const *file_path, int file_pos) {
     decode_forks[index] = pid;
 }
 
+void initialize_tree_pointers(int n) {
+    tree_pointers = calloc(n, sizeof(char_freq_t*));
+    for (int i = 0; i < n; i++) tree_pointers[i] = tree;
+}
+
 void scan_huff(const char *file_path) {
     // Escanea los códigos de cada caracter
 
@@ -203,6 +208,7 @@ void decompress_single_file(const char *compressed_path, const char *output_dir)
     
     int compressed_files_number;
     fread(&compressed_files_number, sizeof(compressed_files_number), 1, file);
+    initialize_tree_pointers(compressed_files_number);
     
     if (compressed_files_number != 1) {
         printf("Warning: This compressed file contains %d files, but treating as single file\n", compressed_files_number);
@@ -244,6 +250,7 @@ void decompress_dir(const char *compressed_path, const char *dir_path) {
 
     int compressed_files_number;
     fread(&compressed_files_number, sizeof(compressed_files_number), 1, file);
+    initialize_tree_pointers(compressed_files_number);
     file_pointers = calloc(compressed_files_number, sizeof(long));
 
     for (int i = 0; i < compressed_files_number; i++) {
@@ -261,10 +268,22 @@ void decompress_dir(const char *compressed_path, const char *dir_path) {
     construct_dir(dir_path);    // Si el directorio para guardar los archivos no existe, lo crea
     
     for (int i = 0; i < compressed_files_number; i++) {
-        if (decode_mode == PARALLEL) {}
         FILE *actual_file = fopen(compressed_path, "rb");
+
+        if (decode_mode == PARALLEL) {
+            decode_fork(actual_file, dir_path, i);
+            continue;
+        }
+
+        if (decode_mode == CONCURRENT) {
+            decode_thread(actual_file, dir_path, i);
+            continue;
+        }
+        
         decompress_file(actual_file, dir_path, i);
     }
+
+    wait_decode_program();
 }
 
 void decompress_file(FILE *compressed_file, const char *dir_path, int file_pos) {
@@ -278,7 +297,7 @@ void decompress_file(FILE *compressed_file, const char *dir_path, int file_pos) 
     fseek(compressed_file, file_pointers[file_pos], SEEK_SET);          // Comienza a leer desde el inicio del archivo
     fread(&filename_bits, sizeof(filename_bits), 1, compressed_file);
     fread(&file_bits, sizeof(file_bits), 1, compressed_file);
-    tree_pointer = tree;
+    tree_pointers[file_pos] = tree;
     
     do {
         int filename_bytes = ceil(filename_bits / 8.0);
@@ -286,7 +305,7 @@ void decompress_file(FILE *compressed_file, const char *dir_path, int file_pos) 
         fread(buffer, 1, filename_bytes, compressed_file);
         
         for (int i = 0; i < filename_bytes && decompressed_bits < filename_bits; i++) {
-            decompress_char(buffer[i], filename, &index, &decompressed_bits, filename_bits);
+            decompress_char(buffer[i], filename, &index, &decompressed_bits, filename_bits, file_pos);
         }
         
     } while (decompressed_bits < filename_bits);
@@ -303,7 +322,7 @@ void decompress_file(FILE *compressed_file, const char *dir_path, int file_pos) 
     memset(buffer, 0, BUFFER_SIZE);
     memset(decompressed_buffer, 0, BUFFER_SIZE);
     
-    tree_pointer = tree;
+    tree_pointers[file_pos] = tree;
     decompressed_bits = 0;
     index = 0;
     
@@ -311,7 +330,7 @@ void decompress_file(FILE *compressed_file, const char *dir_path, int file_pos) 
         fread(buffer, 1, BUFFER_SIZE, compressed_file);
         
         for (int i = 0; i < BUFFER_SIZE && decompressed_bits < file_bits; i++) {
-            decompress_char(buffer[i], decompressed_buffer, &index, &decompressed_bits, file_bits);
+            decompress_char(buffer[i], decompressed_buffer, &index, &decompressed_bits, file_bits, file_pos);
             
             if (BUFFER_SIZE - index >= 32) continue;
             
@@ -328,7 +347,9 @@ void decompress_file(FILE *compressed_file, const char *dir_path, int file_pos) 
     fclose(compressed_file); // Close the compressed file
 }
 
-void decompress_char(char character, char buffer[], int *index, int *decompressed_bits, int bits_bound) {
+void decompress_char(char character, char buffer[], int *index, int *decompressed_bits, int bits_bound, int file_pos) {
+    char_freq_t *tree_pointer = tree_pointers[file_pos];
+
     for (int i = 0; i < 8 && *decompressed_bits < bits_bound; i++) {
         // Para cada bit del byte actual del buffer de descompresion
 
@@ -345,6 +366,8 @@ void decompress_char(char character, char buffer[], int *index, int *decompresse
         *index += strlen(tree_pointer->character);
         tree_pointer = tree;
     }
+
+    tree_pointers[file_pos] = tree_pointer;
 }
 
 int decode_main(int argc, char *argv[]) {
