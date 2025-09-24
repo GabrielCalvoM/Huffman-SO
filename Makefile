@@ -37,6 +37,9 @@ $(shell mkdir -p $(OBJDIR)/cnvchar $(OBJDIR)/path_manager $(OBJDIR)/encode $(OBJ
 huffman: $(OBJECTS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o huffman $(OBJECTS) $(LIBS)
 
+test: test/test_huffman.c
+	$(CC) $(CFLAGS) -o test_huffman test/test_huffman.c
+
 # Generic rule for object files
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@

@@ -371,7 +371,6 @@ void add_compressed_file(const char *compressed_filename, int i) {
     int read_size = 0;
     
     fseek(compressed_file, encode_file_pointer[i], SEEK_SET);
-    printf("%ld\n", ftell(compressed_file));
     
     while ((read_size = fread(buffer, 1, sizeof(buffer), file)) > 0) {
         fwrite(buffer, 1, read_size, compressed_file);
